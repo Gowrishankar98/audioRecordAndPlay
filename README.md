@@ -1,97 +1,275 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# 🎵 AudioPlay - React Native Audio Recording App
 
-# Getting Started
+A modern, feature-rich audio recording application built with React Native, featuring real-time recording, playback controls, and file management capabilities.
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+## 📱 Features
 
-## Step 1: Start Metro
+### 🎙️ Audio Recording
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+- **Real-time Recording**: High-quality audio recording using device microphone
+- **Pause/Resume**: Seamless pause and resume functionality during recording
+- **Live Timer**: Real-time recording duration display (MM:SS format)
+- **Permission Handling**: Automatic microphone permission requests with user-friendly prompts
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+### 🎵 Audio Playback
 
-```sh
-# Using npm
-npm start
+- **Preview Mode**: Listen to recordings before saving
+- **Playback Controls**: Play, pause, stop, and seek functionality
+- **Duration Display**: Shows current time and total duration
+- **Auto-reset**: Play button resets to "Play" when audio finishes
 
-# OR using Yarn
-yarn start
+### 💾 File Management
+
+- **Temporary Storage**: Recordings stored locally for preview
+- **Permanent Save**: Save recordings to device Download folder
+- **File Organization**: Automatic file naming with timestamps
+- **Discard Option**: Delete unwanted recordings without saving
+
+### 🎨 User Interface
+
+- **Modern Design**: Clean, intuitive interface with Material Design principles
+- **Responsive Layout**: Optimized for different screen sizes
+- **Visual Feedback**: Color-coded buttons and status indicators
+- **Accessibility**: Screen reader friendly with proper labels
+
+## 🛠️ Technical Stack
+
+### Core Technologies
+
+- **React Native**: 0.81.4
+- **React**: 19.1.0
+- **TypeScript**: 5.8.3
+- **Node.js**: >=20
+
+### Key Dependencies
+
+- **Audio Processing**: `react-native-nitro-sound` - Modern audio recording/playback
+- **File System**: `react-native-fs` - File operations and storage
+- **Permissions**: `react-native-permissions` - Runtime permission handling
+- **Navigation**: `@react-navigation/native` - App navigation
+- **Icons**: `react-native-vector-icons` - Comprehensive icon library
+- **UI Components**: `react-native-safe-area-context` - Safe area handling
+
+### Development Tools
+
+- **ESLint**: Code linting and formatting
+- **Prettier**: Code formatting
+- **Jest**: Testing framework
+- **Metro**: React Native bundler
+
+## 📁 Project Structure
+
+```
+audioPlay/
+├── src/
+│   ├── components/
+│   │   └── home.js              # Main recording interface
+│   ├── navigation/
+│   │   └── appNavigation.js     # App navigation setup
+│   ├── actions/
+│   │   └── commonFunctions.js   # Utility functions & permissions
+│   └── vectorIcons/
+│       ├── Icon.js              # Universal icon component
+│       └── index.js             # Icon exports
+├── android/                     # Android-specific configuration
+├── ios/                        # iOS-specific configuration
+├── App.tsx                      # Main app component
+├── global.js                   # Global exports
+└── package.json                # Dependencies & scripts
 ```
 
-## Step 2: Build and run your app
+## 🚀 Getting Started
 
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
+### Prerequisites
+
+- Node.js >= 20
+- React Native CLI
+- Android Studio (for Android development)
+- Xcode (for iOS development)
+
+### Installation
+
+1. **Clone the repository**
+
+   ```bash
+   git clone <repository-url>
+   cd audioPlay
+   ```
+
+2. **Install dependencies**
+
+   ```bash
+   npm install
+   ```
+
+3. **iOS Setup** (macOS only)
+
+   ```bash
+   cd ios && pod install && cd ..
+   ```
+
+4. **Run the application**
+
+   ```bash
+   # Android
+   npm run android
+
+   # iOS
+   npm run ios
+   ```
+
+## 📱 Usage
+
+### Recording Audio
+
+1. **Start Recording**: Tap the green "Record" button
+2. **Pause**: Tap "Pause" to temporarily stop recording
+3. **Resume**: Tap "Resume" to continue from where you left off
+4. **Stop**: Tap "Stop" to finish recording
+
+### Preview & Save
+
+1. **Preview**: After stopping, the recording automatically loads in preview mode
+2. **Playback**: Use play/pause/stop controls to listen to your recording
+3. **Save**: Tap "Save Audio" to permanently store the recording
+4. **Discard**: Tap "Discard" to delete the recording without saving
+
+### File Storage
+
+- **Android**: Files saved to `/storage/emulated/0/Download/`
+- **iOS**: Files saved to app's Documents directory
+- **Format**: MP3 (Android) / M4A (iOS)
+- **Naming**: `audio_[timestamp].mp3/m4a`
+
+## 🔧 Configuration
+
+### Permissions
+
+The app automatically requests the following permissions:
+
+**Android** (`android/app/src/main/AndroidManifest.xml`):
+
+```xml
+<uses-permission android:name="android.permission.RECORD_AUDIO" />
+<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+<uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+```
+
+**iOS** (`ios/audioPlay/Info.plist`):
+
+```xml
+<key>NSMicrophoneUsageDescription</key>
+<string>This app needs access to microphone to record audio</string>
+```
+
+### Customization
+
+- **Audio Quality**: Modify recording parameters in `home.js`
+- **File Location**: Change storage paths in `saveAudio()` function
+- **UI Themes**: Update colors in `StyleSheet` objects
+- **Icon Sets**: Add more icon families in `Icon.js`
+
+## 🧪 Testing
+
+```bash
+# Run tests
+npm test
+
+# Run linting
+npm run lint
+
+# Start Metro bundler
+npm start
+```
+
+## 📦 Build & Deployment
 
 ### Android
 
-```sh
-# Using npm
-npm run android
+```bash
+# Debug build
+npx react-native run-android
 
-# OR using Yarn
-yarn android
+# Release build
+cd android
+./gradlew assembleRelease
 ```
 
 ### iOS
 
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
+```bash
+# Debug build
+npx react-native run-ios
 
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
-
-```sh
-bundle install
+# Release build
+# Use Xcode to build and archive
 ```
 
-Then, and every time you update your native dependencies, run:
+## 🔍 Troubleshooting
 
-```sh
-bundle exec pod install
+### Common Issues
+
+1. **Permission Denied**
+
+   - Ensure microphone permissions are granted
+   - Check device settings for app permissions
+
+2. **Build Errors**
+
+   - Clean and rebuild: `npx react-native clean`
+   - Reset Metro cache: `npx react-native start --reset-cache`
+
+3. **Audio Not Recording**
+
+   - Verify microphone hardware functionality
+   - Check app permissions in device settings
+
+4. **File Save Issues**
+   - Ensure storage permissions are granted
+   - Check available device storage space
+
+### Debug Mode
+
+```bash
+# Enable debug logging
+npx react-native start --reset-cache
 ```
 
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
+## 🤝 Contributing
 
-```sh
-# Using npm
-npm run ios
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature-name`
+3. Commit changes: `git commit -m 'Add feature'`
+4. Push to branch: `git push origin feature-name`
+5. Submit a pull request
 
-# OR using Yarn
-yarn ios
-```
+### Code Style
 
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
+- Follow ESLint configuration
+- Use Prettier for formatting
+- Write meaningful commit messages
+- Add comments for complex logic
 
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
+## 📄 License
 
-## Step 3: Modify your app
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-Now that you have successfully run the app, let's make changes!
+## 🙏 Acknowledgments
 
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
+- **React Native Community** for the excellent framework
+- **Nitro Sound** for the modern audio library
+- **Vector Icons** for comprehensive icon sets
+- **React Navigation** for smooth navigation experience
 
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
+## 📞 Support
 
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
+For support, questions, or feature requests:
 
-## Congratulations! :tada:
+- Create an issue in the repository
+- Contact the development team
+- Check the documentation for common solutions
 
-You've successfully run and modified your React Native App. :partying_face:
+---
 
-### Now what?
-
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+**Made with ❤️ using React Native**
