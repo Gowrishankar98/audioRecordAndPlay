@@ -18,25 +18,14 @@ const Home = ({ navigation }) => {
   const [paused, setPaused] = React.useState(false);
   const [recordTime, setRecordTime] = React.useState('0:00');
   const [audioFileData, setAudioFileData] = React.useState({
-    audioFilePath: '',
-    showPlayer: false,
     timer: null,
-    isRecorded: false, // Track if recording is completed
-    tempAudioPath: '', // Temporary path for recorded audio
-    pausedSeconds: 0, // Track paused time in seconds
-    showTempPlayer: false, // Show temp player for preview before saving
-    recordingStartTime: null, // Track when recording started (timestamp)
-    backgroundTime: 0, // Track time spent in background
-    lastBackgroundTime: null, // Last time app went to background
-  });
-
-  // Audio player state for saved audio
-  const [audioPlayer, setAudioPlayer] = React.useState({
-    isPlaying: false,
-    isPaused: false,
-    duration: 0,
-    currentTime: 0,
-    sound: null,
+    isRecorded: false,
+    tempAudioPath: '',
+    showTempPlayer: false,
+    recordingStartTime: null,
+    backgroundTime: 0,
+    lastBackgroundTime: null,
+    micConflictDetected: false,
   });
 
   // Temp audio player state for preview before saving
@@ -45,7 +34,6 @@ const Home = ({ navigation }) => {
     isPaused: false,
     duration: 0,
     currentTime: 0,
-    sound: null,
   });
 
   // NitroSound instances
@@ -59,54 +47,6 @@ const Home = ({ navigation }) => {
       }
     };
   }, [audioFileData.timer]);
-
-  // Cleanup audio players on unmount
-  React.useEffect(() => {
-    return () => {
-      if (audioPlayer.sound) {
-        audioPlayer.sound.stop();
-        audioPlayer.sound.release();
-      }
-      if (tempAudioPlayer.sound) {
-        tempAudioPlayer.sound.stop();
-        tempAudioPlayer.sound.release();
-      }
-    };
-  }, [audioPlayer.sound, tempAudioPlayer.sound]);
-
-  // Update current time during playback for saved audio
-  React.useEffect(() => {
-    let interval;
-    if (audioPlayer.isPlaying && audioPlayer.sound) {
-      interval = setInterval(() => {
-        audioPlayer.sound.getCurrentTime(seconds => {
-          setAudioPlayer(prev => ({ ...prev, currentTime: seconds }));
-        });
-      }, 1000);
-    }
-    return () => {
-      if (interval) {
-        clearInterval(interval);
-      }
-    };
-  }, [audioPlayer.isPlaying, audioPlayer.sound]);
-
-  // Update current time during playback for temp audio
-  React.useEffect(() => {
-    let interval;
-    if (tempAudioPlayer.isPlaying && tempAudioPlayer.sound) {
-      interval = setInterval(() => {
-        tempAudioPlayer.sound.getCurrentTime(seconds => {
-          setTempAudioPlayer(prev => ({ ...prev, currentTime: seconds }));
-        });
-      }, 1000);
-    }
-    return () => {
-      if (interval) {
-        clearInterval(interval);
-      }
-    };
-  }, [tempAudioPlayer.isPlaying, tempAudioPlayer.sound]);
 
   // Initialize NitroSound instance
   React.useEffect(() => {
@@ -177,6 +117,178 @@ const Home = ({ navigation }) => {
     return () => subscription?.remove();
   }, [recording, paused]);
 
+  // Handle microphone conflicts (phone calls, camera apps, etc.)
+  React.useEffect(() => {
+    const handleMicrophoneConflict = async () => {
+      if (recording && !paused) {
+        console.log('Microphone conflict detected - auto-stopping recording');
+
+        // Auto-stop recording and save to temp player
+        setRecording(false);
+        setPaused(false);
+        setRecordTime('0:00');
+
+        // Clear timer
+        if (audioFileData.timer) {
+          clearInterval(audioFileData.timer);
+        }
+
+        // Stop NitroSound recording and get the audio file
+        try {
+          if (nitroSound) {
+            const audioFile = await nitroSound.stopRecorder();
+
+            // Update the temp audio path with the actual file path
+            if (audioFile) {
+              setAudioFileData(prev => ({ ...prev, tempAudioPath: audioFile }));
+
+              // Get duration by briefly starting the player
+              try {
+                // Set subscription duration for regular updates
+                nitroSound.setSubscriptionDuration(0.1);
+
+                // Add playback listener to get duration
+                nitroSound.addPlayBackListener(playbackMeta => {
+                  setTempAudioPlayer(prev => ({
+                    ...prev,
+                    duration: playbackMeta.duration,
+                  }));
+                });
+
+                // Start player briefly to get duration
+                await nitroSound.startPlayer(audioFile);
+
+                // Stop immediately after getting duration
+                setTimeout(async () => {
+                  await nitroSound.stopPlayer();
+                  nitroSound.removePlayBackListener();
+                }, 100);
+              } catch (durationError) {
+                console.error('Error getting duration:', durationError);
+              }
+            }
+          }
+        } catch (error) {
+          console.error(
+            'Error stopping NitroSound recording due to mic conflict:',
+            error,
+          );
+        }
+
+        // Update state to show temp player
+        setAudioFileData(prev => ({
+          ...prev,
+          isRecorded: true,
+          timer: null,
+          showTempPlayer: true,
+          micConflictDetected: true,
+        }));
+
+        // Reset background time tracking
+        setAudioFileData(prev => ({
+          ...prev,
+          recordingStartTime: null,
+          backgroundTime: 0,
+          lastBackgroundTime: null,
+        }));
+
+        // Show user notification
+        Alert.alert(
+          'Recording Stopped',
+          'Recording was automatically stopped due to microphone conflict (phone call, camera app, etc.). Your partial recording is saved and ready to play.',
+          [{ text: 'OK' }],
+        );
+      }
+    };
+
+    const handleMicrophoneAvailable = () => {
+      if (audioFileData.micConflictDetected) {
+        console.log('Microphone available again - ready for new recording');
+
+        // Update state to indicate mic is available
+        setAudioFileData(prev => ({
+          ...prev,
+          micConflictDetected: false,
+        }));
+
+        // Show user notification
+        Alert.alert(
+          'Microphone Available',
+          'Microphone is now available. You can start a new recording.',
+          [{ text: 'OK' }],
+        );
+      }
+    };
+
+    // Set up microphone conflict detection
+    let micConflictListener = null;
+    let micAvailableListener = null;
+
+    if (nitroSound) {
+      try {
+        // Listen for audio session interruptions (iOS/Android)
+        if (Platform.OS === 'ios') {
+          // iOS audio session interruption events
+          micConflictListener = nitroSound.addAudioSessionInterruptionListener(
+            handleMicrophoneConflict,
+          );
+          micAvailableListener = nitroSound.addAudioSessionResumeListener(
+            handleMicrophoneAvailable,
+          );
+        } else {
+          // Android audio focus change events
+          micConflictListener = nitroSound.addAudioFocusChangeListener(
+            focusChange => {
+              if (
+                focusChange === 'AUDIOFOCUS_LOSS' ||
+                focusChange === 'AUDIOFOCUS_LOSS_TRANSIENT'
+              ) {
+                handleMicrophoneConflict();
+              } else if (focusChange === 'AUDIOFOCUS_GAIN') {
+                handleMicrophoneAvailable();
+              }
+            },
+          );
+        }
+      } catch (error) {
+        console.log(
+          'Audio session listeners not available, using fallback method',
+        );
+
+        // Fallback: Monitor app state changes more aggressively
+        const aggressiveAppStateListener = AppState.addEventListener(
+          'change',
+          nextAppState => {
+            if (nextAppState === 'background' && recording && !paused) {
+              // Check if it's likely a phone call or camera app
+              setTimeout(() => {
+                if (recording && !paused) {
+                  handleMicrophoneConflict();
+                }
+              }, 1000); // Give a short delay to detect the conflict
+            }
+          },
+        );
+
+        return () => {
+          aggressiveAppStateListener?.remove();
+        };
+      }
+    }
+
+    return () => {
+      micConflictListener?.remove();
+      micAvailableListener?.remove();
+    };
+  }, [
+    recording,
+    paused,
+    nitroSound,
+    audioFileData.micConflictDetected,
+    audioFileData.timer,
+    recordTime,
+  ]);
+
   const startRecording = async () => {
     try {
       const hasPermission = await requestPermissionsForAudio();
@@ -201,6 +313,8 @@ const Home = ({ navigation }) => {
         recordingStartTime: startTime,
         backgroundTime: 0,
         lastBackgroundTime: null,
+        micConflictDetected: false,
+        autoPausedDueToConflict: false,
       }));
 
       if (!nitroSound) {
@@ -267,31 +381,12 @@ const Home = ({ navigation }) => {
       console.error('Error pausing NitroSound recording:', error);
     }
 
-    // Store the current time in seconds and clear the timer
-    let currentSeconds = 0;
-    if (recordTime.includes(':')) {
-      // Format: "1:30" or "0:05"
-      const parts = recordTime.split(':');
-      const minutes = parseInt(parts[0], 10) || 0;
-      const seconds = parseInt(parts[1], 10) || 0;
-      currentSeconds = minutes * 60 + seconds;
-    } else if (recordTime.includes('m')) {
-      // Format: "1m 30s" (legacy format)
-      const parts = recordTime.split('m ');
-      const minutes = parseInt(parts[0], 10) || 0;
-      const seconds = parseInt(parts[1].replace('s', ''), 10) || 0;
-      currentSeconds = minutes * 60 + seconds;
-    } else {
-      // Format: "30s" (legacy format)
-      currentSeconds = parseInt(recordTime.replace('s', ''), 10) || 0;
-    }
-
+    // Clear the timer
     if (audioFileData.timer) {
       clearInterval(audioFileData.timer);
       setAudioFileData(prev => ({
         ...prev,
         timer: null,
-        pausedSeconds: currentSeconds,
       }));
     }
   };
@@ -366,12 +461,14 @@ const Home = ({ navigation }) => {
     setPaused(false);
     setRecordTime('0:00');
 
-    // Reset background time tracking
+    // Reset background time tracking and microphone conflict state
     setAudioFileData(prev => ({
       ...prev,
       recordingStartTime: null,
       backgroundTime: 0,
       lastBackgroundTime: null,
+      micConflictDetected: false,
+      autoPausedDueToConflict: false,
     }));
 
     // Clear timer
@@ -423,7 +520,6 @@ const Home = ({ navigation }) => {
       ...prev,
       isRecorded: true,
       timer: null,
-      pausedSeconds: 0,
       showTempPlayer: true, // Show temp player for preview
     }));
   };
@@ -444,7 +540,6 @@ const Home = ({ navigation }) => {
           ...prev,
           isRecorded: false,
           tempAudioPath: '',
-          pausedSeconds: 0,
         }));
         return;
       }
@@ -474,25 +569,17 @@ const Home = ({ navigation }) => {
 
       setAudioFileData(prev => ({
         ...prev,
-        audioFilePath: finalAudioPath,
-        showPlayer: true,
         isRecorded: false,
         tempAudioPath: '',
-        pausedSeconds: 0,
         showTempPlayer: false,
       }));
 
       // Reset temp audio player
-      if (tempAudioPlayer.sound) {
-        tempAudioPlayer.sound.stop();
-        tempAudioPlayer.sound.release();
-      }
       setTempAudioPlayer({
         isPlaying: false,
         isPaused: false,
         duration: 0,
         currentTime: 0,
-        sound: null,
       });
       setAudioRecordStarted(false);
 
@@ -522,21 +609,15 @@ const Home = ({ navigation }) => {
         ...prev,
         isRecorded: false,
         tempAudioPath: '',
-        pausedSeconds: 0,
         showTempPlayer: false,
       }));
 
       // Reset temp audio player
-      if (tempAudioPlayer.sound) {
-        tempAudioPlayer.sound.stop();
-        tempAudioPlayer.sound.release();
-      }
       setTempAudioPlayer({
         isPlaying: false,
         isPaused: false,
         duration: 0,
         currentTime: 0,
-        sound: null,
       });
       setAudioRecordStarted(false);
       Alert.alert('Audio Discarded', 'Recording has been discarded.');
@@ -547,21 +628,15 @@ const Home = ({ navigation }) => {
         ...prev,
         isRecorded: false,
         tempAudioPath: '',
-        pausedSeconds: 0,
         showTempPlayer: false,
       }));
 
       // Reset temp audio player
-      if (tempAudioPlayer.sound) {
-        tempAudioPlayer.sound.stop();
-        tempAudioPlayer.sound.release();
-      }
       setTempAudioPlayer({
         isPlaying: false,
         isPaused: false,
         duration: 0,
         currentTime: 0,
-        sound: null,
       });
 
       Alert.alert('Audio Discarded', 'Recording has been discarded.');
@@ -607,75 +682,51 @@ const Home = ({ navigation }) => {
     }
 
     try {
-      if (tempAudioPlayer.sound) {
-        // If sound exists, just play/resume
-        if (tempAudioPlayer.isPaused) {
-          tempAudioPlayer.sound.setCurrentTime(tempAudioPlayer.currentTime);
-        }
-        tempAudioPlayer.sound.play(success => {
-          if (success) {
+      // Use NitroSound for temp audio playback
+      try {
+        if (nitroSound) {
+          // Set subscription duration for regular updates
+          nitroSound.setSubscriptionDuration(0.1); // Update every 100ms
+
+          // Add playback listener to track progress
+          nitroSound.addPlayBackListener(playbackMeta => {
+            setTempAudioPlayer(prev => ({
+              ...prev,
+              currentTime: playbackMeta.currentPosition,
+              duration: playbackMeta.duration,
+            }));
+          });
+
+          // Add playback end listener to reset button state
+          nitroSound.addPlaybackEndListener(playbackEndMeta => {
             setTempAudioPlayer(prev => ({
               ...prev,
               isPlaying: false,
               isPaused: false,
               currentTime: 0,
             }));
-          } else {
-            Alert.alert('Playback Error', 'Failed to play temp audio');
-          }
-        });
-        setTempAudioPlayer(prev => ({
-          ...prev,
-          isPlaying: true,
-          isPaused: false,
-        }));
-      } else {
-        // Use NitroSound for temp audio playback
-        try {
-          if (nitroSound) {
-            // Set subscription duration for regular updates
-            nitroSound.setSubscriptionDuration(0.1); // Update every 100ms
+          });
 
-            // Add playback listener to track progress
-            nitroSound.addPlayBackListener(playbackMeta => {
-              setTempAudioPlayer(prev => ({
-                ...prev,
-                currentTime: playbackMeta.currentPosition,
-                duration: playbackMeta.duration,
-              }));
-            });
+          await nitroSound.startPlayer(audioFileData.tempAudioPath);
 
-            // Add playback end listener to reset button state
-            nitroSound.addPlaybackEndListener(playbackEndMeta => {
-              setTempAudioPlayer(prev => ({
-                ...prev,
-                isPlaying: false,
-                isPaused: false,
-                currentTime: 0,
-              }));
-            });
-
-            await nitroSound.startPlayer(audioFileData.tempAudioPath);
-
-            setTempAudioPlayer(prev => ({
-              ...prev,
-              isPlaying: true,
-              isPaused: false,
-            }));
-          }
-        } catch (error) {
-          console.error('Error playing temp audio with NitroSound:', error);
-          Alert.alert(
-            'Playback Error',
-            'Failed to play recorded audio. The file may not be ready yet.',
-            [
-              {
-                text: 'OK',
-                onPress: () => {},
-              },
-            ],
-          );
+          setTempAudioPlayer(prev => ({
+            ...prev,
+            isPlaying: true,
+            isPaused: false,
+          }));
         }
+      } catch (error) {
+        console.error('Error playing temp audio with NitroSound:', error);
+        Alert.alert(
+          'Playback Error',
+          'Failed to play recorded audio. The file may not be ready yet.',
+          [
+            {
+              text: 'OK',
+              onPress: () => {},
+            },
+          ],
+        );
       }
     } catch (error) {
       console.error('Error playing temp audio:', error);
@@ -730,9 +781,19 @@ const Home = ({ navigation }) => {
       {!audioFileData.isRecorded && (
         <Text style={styles.title}> {recordTime}</Text>
       )}
+
+      {/* Partial recording indicator */}
+      {audioFileData.micConflictDetected && audioFileData.showTempPlayer && (
+        <View style={styles.conflictIndicator}>
+          <Icon family="material" name="mic-off" size={20} color="#FF5722" />
+          <Text style={styles.conflictText}>
+            Partial recording saved due to microphone conflict
+          </Text>
+        </View>
+      )}
       {!audioRecordStarted && (
         <TouchableOpacity onPress={startRecording} style={styles.recordButton}>
-          <Icon family="material" name="play-arrow" size={24} color="white" />
+          <Icon family="material" name="mic" size={32} color="white" />
           <Text style={styles.recordButtonText}>Record</Text>
         </TouchableOpacity>
       )}
@@ -765,9 +826,15 @@ const Home = ({ navigation }) => {
       {/* Temp Audio Player for Preview */}
       {audioFileData.showTempPlayer && (
         <View style={styles.tempPlayerContainer}>
-          <Text style={styles.tempPlayerTitle}>🎵 Preview Your Recording</Text>
+          <Text style={styles.tempPlayerTitle}>
+            {audioFileData.micConflictDetected
+              ? '🎵 Partial Recording'
+              : '🎵 Preview Your Recording'}
+          </Text>
           <Text style={styles.tempPlayerSubtitle}>
-            Listen to your recording before saving
+            {audioFileData.micConflictDetected
+              ? 'Recording was stopped due to microphone conflict. Listen to your partial recording.'
+              : 'Listen to your recording before saving'}
           </Text>
           {/* Temp Audio Player Controls */}
           <View style={styles.tempPlayerContent}>
@@ -984,6 +1051,22 @@ const styles = StyleSheet.create({
   discardButtonText: {
     color: 'white',
     fontWeight: 'bold',
+  },
+  conflictIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFEBEE',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#FF5722',
+  },
+  conflictText: {
+    color: '#FF5722',
+    fontSize: 12,
+    marginLeft: 8,
+    fontWeight: '500',
   },
 });
 
