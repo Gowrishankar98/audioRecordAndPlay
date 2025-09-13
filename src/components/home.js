@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   Alert,
   StyleSheet,
+  AppState,
 } from 'react-native';
 import { Icon, requestPermissionsForAudio } from '../../global';
 import RNFS from 'react-native-fs';
@@ -24,6 +25,9 @@ const Home = ({ navigation }) => {
     tempAudioPath: '', // Temporary path for recorded audio
     pausedSeconds: 0, // Track paused time in seconds
     showTempPlayer: false, // Show temp player for preview before saving
+    recordingStartTime: null, // Track when recording started (timestamp)
+    backgroundTime: 0, // Track time spent in background
+    lastBackgroundTime: null, // Last time app went to background
   });
 
   // Audio player state for saved audio
@@ -126,6 +130,53 @@ const Home = ({ navigation }) => {
     };
   }, [nitroSound]);
 
+  // Handle app state changes for background timer
+  React.useEffect(() => {
+    const handleAppStateChange = nextAppState => {
+      // Only track background time when actively recording (not paused)
+      if (recording && !paused) {
+        if (nextAppState === 'background') {
+          // App went to background - record the time
+          const currentTime = Date.now();
+          setAudioFileData(prev => ({
+            ...prev,
+            lastBackgroundTime: currentTime,
+          }));
+          console.log(
+            'App went to background, recording state:',
+            recording ? 'active' : 'paused',
+          );
+        } else if (nextAppState === 'active') {
+          // App came back to foreground - calculate background time
+          const currentTime = Date.now();
+          setAudioFileData(prev => {
+            if (prev.lastBackgroundTime) {
+              const backgroundDuration = Math.floor(
+                (currentTime - prev.lastBackgroundTime) / 1000,
+              );
+              return {
+                ...prev,
+                backgroundTime: prev.backgroundTime + backgroundDuration,
+                lastBackgroundTime: null,
+              };
+            }
+            return prev;
+          });
+          console.log(
+            'App returned to foreground, recording state:',
+            recording ? 'active' : 'paused',
+          );
+        }
+      }
+    };
+
+    const subscription = AppState.addEventListener(
+      'change',
+      handleAppStateChange,
+    );
+    return () => subscription?.remove();
+  }, [recording, paused]);
+
   const startRecording = async () => {
     try {
       const hasPermission = await requestPermissionsForAudio();
@@ -142,6 +193,15 @@ const Home = ({ navigation }) => {
       setRecording(true);
       setPaused(false);
       setAudioRecordStarted(true);
+
+      // Record the start time for background timer calculation
+      const startTime = Date.now();
+      setAudioFileData(prev => ({
+        ...prev,
+        recordingStartTime: startTime,
+        backgroundTime: 0,
+        lastBackgroundTime: null,
+      }));
 
       if (!nitroSound) {
         Alert.alert('Recorder Error', 'Audio recorder not initialized');
@@ -171,12 +231,14 @@ const Home = ({ navigation }) => {
         return;
       }
 
-      // Simulate recording timer
-      let seconds = 0;
+      // Recording timer with background support
       const timer = setInterval(() => {
-        seconds++;
-        const minutes = Math.floor(seconds / 60);
-        const remainingSeconds = seconds % 60;
+        const currentTime = Date.now();
+        const elapsedTime = Math.floor((currentTime - startTime) / 1000);
+        const totalElapsedTime = elapsedTime + audioFileData.backgroundTime;
+
+        const minutes = Math.floor(totalElapsedTime / 60);
+        const remainingSeconds = totalElapsedTime % 60;
         setRecordTime(
           `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`,
         );
@@ -207,14 +269,20 @@ const Home = ({ navigation }) => {
 
     // Store the current time in seconds and clear the timer
     let currentSeconds = 0;
-    if (recordTime.includes('m')) {
-      // Format: "1m 30s"
+    if (recordTime.includes(':')) {
+      // Format: "1:30" or "0:05"
+      const parts = recordTime.split(':');
+      const minutes = parseInt(parts[0], 10) || 0;
+      const seconds = parseInt(parts[1], 10) || 0;
+      currentSeconds = minutes * 60 + seconds;
+    } else if (recordTime.includes('m')) {
+      // Format: "1m 30s" (legacy format)
       const parts = recordTime.split('m ');
       const minutes = parseInt(parts[0], 10) || 0;
       const seconds = parseInt(parts[1].replace('s', ''), 10) || 0;
       currentSeconds = minutes * 60 + seconds;
     } else {
-      // Format: "30s"
+      // Format: "30s" (legacy format)
       currentSeconds = parseInt(recordTime.replace('s', ''), 10) || 0;
     }
 
@@ -262,21 +330,26 @@ const Home = ({ navigation }) => {
       currentSeconds = parseInt(recordTime.replace('s', ''), 10) || 0;
     }
 
-    // Start timer from the exact paused time
-    let seconds = currentSeconds;
+    // Start timer from the exact paused time using timestamp approach
+    const resumeStartTime = Date.now();
+    const pausedDuration = currentSeconds * 1000; // Convert to milliseconds
 
-    // Immediately display the current paused time
-    const initialMinutes = Math.floor(seconds / 60);
-    const initialRemainingSeconds = seconds % 60;
+    // Immediately display the current paused time (background time only added during active recording)
+    const initialMinutes = Math.floor(currentSeconds / 60);
+    const initialRemainingSeconds = currentSeconds % 60;
     const initialTimeString = `${initialMinutes}:${initialRemainingSeconds
       .toString()
       .padStart(2, '0')}`;
     setRecordTime(initialTimeString);
 
     const timer = setInterval(() => {
-      seconds++;
-      const minutes = Math.floor(seconds / 60);
-      const remainingSeconds = seconds % 60;
+      const currentTime = Date.now();
+      const elapsedTime = Math.floor((currentTime - resumeStartTime) / 1000);
+      const totalElapsedTime =
+        pausedDuration / 1000 + elapsedTime + audioFileData.backgroundTime;
+
+      const minutes = Math.floor(totalElapsedTime / 60);
+      const remainingSeconds = Math.floor(totalElapsedTime % 60);
       const timeString = `${minutes}:${remainingSeconds
         .toString()
         .padStart(2, '0')}`;
@@ -292,6 +365,15 @@ const Home = ({ navigation }) => {
     setRecording(false);
     setPaused(false);
     setRecordTime('0:00');
+
+    // Reset background time tracking
+    setAudioFileData(prev => ({
+      ...prev,
+      recordingStartTime: null,
+      backgroundTime: 0,
+      lastBackgroundTime: null,
+    }));
+
     // Clear timer
     if (audioFileData.timer) {
       clearInterval(audioFileData.timer);
@@ -776,6 +858,10 @@ const styles = StyleSheet.create({
     marginTop: 5,
     fontWeight: 'bold',
   },
+  buttonRow: {
+    flexDirection: 'row',
+    marginTop: 20,
+  },
   pauseButton: {
     width: '30%',
     alignItems: 'center',
@@ -810,6 +896,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 10,
     backgroundColor: 'green',
+    marginRight: 10,
     borderRadius: 5,
   },
   resumeButtonText: {
